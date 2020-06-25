@@ -9,112 +9,121 @@
 #include<time.h>
 
 #define BUF_SIZE 100
-#define MAX_CLNT 100
+#define MAX_CLIENT 100
 #define MAX_IP 30
 
-void *handle_clnt(void *arg);
+void *reading_function(void *sock);
 void send_msg(char *msg, int len);
-void error_handling(char *msg);
 char *serverState(int count);
 void menu(char port[]);
 
 
-int clnt_cnt=0;
-int clnt_socks[MAX_CLNT];
-pthread_mutex_t mutx;
+int client_num=0;
+int client_socks[MAX_CLIENT];
+pthread_mutex_t mutex;
 
 int main(int argc, char *argv[])
 {
     int server_sock, client_sock;
     struct sockaddr_in server_adr, client_adr;
-    int clnt_adr_sz;
+    int client_adr_sz;
     pthread_t thread_id;
 
-    struct tm *t;
-    time_t timer = time(NULL);
-    t=localtime(&timer);
-
+    //print USAGE when arguments are wrong
     if (argc != 2) {
-      printf(" Usage : %s <PORT>\n", argv[0]);
+      printf(" USAGE : %s <PORT>\n", argv[0]);
       return EXIT_FAILURE;
     }
 
-    menu(argv[1]);
+    //assign argv[1] in variable PORT
+    int PORT = atoi(argv[1]);
 
-    pthread_mutex_init(&mutx, NULL);
-    serv_sock=socket(PF_INET, SOCK_STREAM, 0);
+    //menu(argv[1]);
+    //Initialize pthread
+    pthread_mutex_init(&mutex, NULL);
 
-    memset(&serv_adr, 0, sizeof(serv_adr));
-    serv_adr.sin_family=AF_INET;
-    serv_adr.sin_addr.s_addr=htonl(INADDR_ANY);
-    serv_adr.sin_port=htons(atoi(argv[1]));
+    //create socket
+    server_sock=socket(PF_INET, SOCK_STREAM, 0);
 
-    if (bind(serv_sock, (struct sockaddr*)&serv_adr, sizeof(serv_adr))==-1)
-        error_handling("bind() error");
-    if (listen(serv_sock, 5)==-1)
-        error_handling("listen() error");
+    //Set the options for socket
+    memset(&server_adr, 0, sizeof(server_adr));
+    server_adr.sin_family=AF_INET;
+    server_adr.sin_addr.s_addr=htonl(INADDR_ANY);
+    server_adr.sin_port=htons(PORT);
 
-    while(1)
-    {
-        t=localtime(&timer);
-        clnt_adr_sz=sizeof(clnt_adr);
-        clnt_sock=accept(serv_sock, (struct sockaddr*)&clnt_adr, &clnt_adr_sz);
-
-        pthread_mutex_lock(&mutx);
-        clnt_socks[clnt_cnt++]=clnt_sock;
-        pthread_mutex_unlock(&mutx);
-
-        pthread_create(&t_id, NULL, handle_clnt, (void*)&clnt_sock);
-        pthread_detach(t_id);
-        printf(" Connceted client IP : %s ", inet_ntoa(clnt_adr.sin_addr));
-        printf("(%d-%d-%d %d:%d)\n", t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-        t->tm_hour, t->tm_min);
-        printf(" chatter (%d/100)\n", clnt_cnt);
+    //binding the socket
+    if (bind(server_sock, (struct sockaddr*)&server_adr, sizeof(server_adr)) == -1) {
+      perror("bind error!\n");
+      return EXIT_FAILURE;
     }
-    close(serv_sock);
+
+    //listening the connection
+    if (listen(server_sock, 5) == -1) {
+      perror("listen error!\n");
+      return EXIT_FAILURE;
+    }
+
+    while(1) {
+      client_adr_sz = sizeof(client_adr);
+      client_sock = accept(server_sock, (struct sockaddr*)&client_adr, &client_adr_sz);
+
+      pthread_mutex_lock(&mutex);
+      //save client's socket in array 'client_socks'
+      client_socks[client_num++] = client_sock;
+      pthread_mutex_unlock(&mutex);
+
+      pthread_create(&thread_id, NULL, reading_function, (void*)&client_sock);
+      //pthread_detach(thread_id);
+      fprintf(stderr, "Connceted client IP : %s \n", inet_ntoa(client_adr.sin_addr));
+    }
+    close(server_sock);
     return 0;
 }
 
-void *handle_clnt(void *arg)
+void *reading_function(void *sock)
 {
-    int clnt_sock=*((int*)arg);
-    int str_len=0, i;
-    char msg[BUF_SIZE];
+  int client_sock = *((int*)sock);
+  int len = 0;
+  char message[BUF_SIZE];
 
-    while((str_len=read(clnt_sock, msg, sizeof(msg)))!=0)
-        send_msg(msg, str_len);
-    // remove disconnected client
-    pthread_mutex_lock(&mutx);
-    for (i=0; i<clnt_cnt; i++)
+  //read data from client
+  while((len = read(client_sock, message, sizeof(message)))!=0) {
+    fprintf(stderr, "From client : %s\n", message);
+    memset(message, '\0', BUF_SIZE);
+    //break;
+  }
+
+  // remove disconnected client
+  pthread_mutex_lock(&mutex);
+  for (int i = 0; i < client_num; i++)
+  {
+    if (client_sock==client_socks[i])
     {
-        if (clnt_sock==clnt_socks[i])
-        {
-            while(i++<clnt_cnt-1)
-                clnt_socks[i]=clnt_socks[i+1];
-            break;
+        while(i++<client_num-1) {
+          client_socks[i]=client_socks[i+1];
         }
-        }
-    clnt_cnt--;
-    pthread_mutex_unlock(&mutx);
-    close(clnt_sock);
-    return NULL;
+        break;
+      }
+  }
+  client_num--;
+  pthread_mutex_unlock(&mutex);
+
+  //close the client socket
+  //thread terminate
+  close(client_sock);
+
+  return NULL;
 }
 
 void send_msg(char* msg, int len)
 {
     int i;
-    pthread_mutex_lock(&mutx);
-    for (i=0; i<clnt_cnt; i++)
-        write(clnt_socks[i], msg, len);
-    pthread_mutex_unlock(&mutx);
+    pthread_mutex_lock(&mutex);
+    for (i=0; i<client_num; i++)
+        write(client_socks[i], msg, len);
+    pthread_mutex_unlock(&mutex);
 }
 
-void error_handling(char *msg)
-{
-    fputs(msg, stderr);
-    fputc('\n', stderr);
-    exit(1);
-}
 
 char* serverState(int count)
 {
@@ -134,7 +143,7 @@ void menu(char port[])
     system("clear");
     printf(" **** moon/sun chat server ****\n");
     printf(" server port    : %s\n", port);
-    printf(" server state   : %s\n", serverState(clnt_cnt));
-    printf(" max connection : %d\n", MAX_CLNT);
+    printf(" server state   : %s\n", serverState(client_num));
+    printf(" max connection : %d\n", MAX_CLIENT);
     printf(" ****          Log         ****\n\n");
 }
