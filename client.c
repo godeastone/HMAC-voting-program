@@ -28,8 +28,8 @@ int main(int argc, char *argv[])
   void* thread_return;
 
   //Print USAGE If arguments are wrong
-  if (argc!=4) {
-      printf(" USAGE : %s <ip> <port> <name>\n", argv[0]);
+  if (argc != 3) {
+      printf(" USAGE : %s <ip> <port>\n", argv[0]);
       return EXIT_FAILURE;
   }
 
@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
   server_addr.sin_port = htons(PORT);
 
   //ask connection to server
-  if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr))==-1) {
+  if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
     perror("connection error!\n");
     return EXIT_FAILURE;
   }
@@ -56,9 +56,10 @@ int main(int argc, char *argv[])
   //create sending data thread
   //and create receving data thread
   pthread_create(&send_thread, NULL, sending_thread, (void*)&sock);
-  pthread_create(&receive_thread, NULL, receiving_thread, (void*)&sock);
+  //pthread_create(&receive_thread, NULL, receiving_thread, (void*)&sock);
   pthread_join(send_thread, &thread_return);
-  pthread_join(receive_thread, &thread_return);
+  //pthread_join(receive_thread, &thread_return);
+  fprintf(stderr, "client end\n");
   close(sock);
   return 0;
 }
@@ -67,17 +68,13 @@ void *sending_thread(void* socket)
 {
   int sock = *((int *)socket);
   char name_msg[NORMAL_SIZE+BUF_SIZE];
-  char myInfo[BUF_SIZE];
   char* who = NULL;
   char temp[BUF_SIZE];
 
-  sprintf(myInfo, "%s's join. IP_%s\n",name , clnt_ip);
-  write(sock, myInfo, strlen(myInfo));
 
-  while(1) {
+  //while(1) {
 
       fgets(msg, BUF_SIZE, stdin);
-      // menu_mode command -> !menu
 
       if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n"))
       {
@@ -86,9 +83,10 @@ void *sending_thread(void* socket)
       }
 
       // send message
-      sprintf(name_msg, "%s %s", name,msg);
-      write(sock, name_msg, strlen(name_msg));
-  }
+      //memset(name_msg, '\0', BUF_SIZE);
+      sprintf(name_msg, "%s", msg);
+      write(sock, name_msg, strlen(name_msg)+1);
+  //}
   return NULL;
 }
 
@@ -96,20 +94,18 @@ void *sending_thread(void* socket)
 void *receiving_thread(void* socket)
 {
   int sock = *((int*)socket);
-  char name_msg[NORMAL_SIZE+BUF_SIZE];
+  char message[BUF_SIZE];
   int str_len;
 
   while(1) {
 
-    if(str_len = read(sock, name_msg, NORMAL_SIZE+BUF_SIZE-1) == -1) {
+    if(str_len = read(sock, message, BUF_SIZE) == -1) {
       perror("reading error!\n");
       return (void *)EXIT_FAILURE;
     }
-
-    name_msg[str_len]=0;
-    fputs(name_msg, stdout);
+    //name_msg[str_len] = '\0';
+    fprintf(stderr, "%s", message);
   }
-
   return NULL;
 }
 
