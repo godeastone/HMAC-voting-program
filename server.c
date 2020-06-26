@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
     //pthread_detach(thread_id2);
 
     if(flag == 1)
-      fprintf(stderr, "An ANONYMOUS(?) voter enters the survey\n");
+      fprintf(stderr, "An (?)ANONYMOUS(?) voter enters the survey\n");
 
     //close connection when timeout
     if(flag == 0)
@@ -187,6 +187,17 @@ void *reading_function(void *sock)
   //print generated hmac by server
   fprintf(stderr, "     > Generated HMAC = ");
   printhex(md, mdLen);
+
+  //compare macs
+  if(!strcmp(recv_hmac, md)) {
+    fprintf(stderr, "   @The MAC seems Same. Message authentication complete@\n");
+  }
+
+  else {
+    fprintf(stderr, "   @The MAC seems Different. Message authentication failed@\n");
+    candid_list[choice-1].votes--;
+  }
+
   pthread_mutex_unlock(&mutex);
 
 
@@ -204,7 +215,7 @@ void *reading_function(void *sock)
 
   client_num--;
 
-  fprintf(stderr, "An ANONYMOUS(?) voter finishes the survey\n");
+  fprintf(stderr, "An (?)ANONYMOUS(?) voter finishes the survey\n");
   pthread_mutex_unlock(&mutex);
 
   //close the client socket
