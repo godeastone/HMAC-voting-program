@@ -11,6 +11,7 @@
 
 
 #define BUF_SIZE 300
+#define CANDID_MAX 30
 
 void *sending_thread(void* arg);
 void *receiving_thread(void* arg);
@@ -20,7 +21,13 @@ int create_HMAC(const char *mdname, unsigned char *md, int *mdLen,
 		const unsigned char *key, const int keyLen,
 		const unsigned char *m, const int mLen);
 
-int flag = 0;
+struct candidates
+{
+  char name[BUF_SIZE];
+  int votes;
+};
+
+int flag3 = 0;
 pthread_mutex_t mutex;
 
 //HMAC variables
@@ -29,7 +36,7 @@ int mdLen;
 char *digest_name = "sha1";
 char *key = "123412341234";
 char message_hmac[BUF_SIZE];
-
+int flag = 0;
 
 int main(int argc, char *argv[])
 {
@@ -83,9 +90,11 @@ int main(int argc, char *argv[])
   //create sending data thread
   //and create receving data thread
   pthread_create(&send_thread, NULL, sending_thread, (void*)&sock);
+  //pthread_detach(send_thread);
   //pthread_create(&receive_thread, NULL, receiving_thread, (void*)&sock);
-  pthread_join(send_thread, &thread_return);
+  //pthread_detach(receive_thread);
   //pthread_join(receive_thread, &thread_return);
+  pthread_join(send_thread, &thread_return);
   fprintf(stderr, "Complete survey!\n");
 
   //close the socket
@@ -99,12 +108,18 @@ void *sending_thread(void* socket)
   char message[BUF_SIZE];
   char temp[BUF_SIZE];
 
+  pthread_mutex_lock(&mutex);
+  while(1) {
+    if(flag3 = 1) break;
+  }
+  pthread_mutex_unlock(&mutex);
+
 again:
   //fgets(temp, BUF_SIZE, stdin);
   scanf("%s", temp);
 
-  if(atoi(temp) == 0) {
-    fprintf(stderr, "Please enter right number\n");
+  if(atoi(temp) == 0 || atoi(temp) > CANDID_MAX) {
+    fprintf(stderr, "## Please enter right number\n");
     goto again;
   }
   //save some values for HMAC
@@ -116,58 +131,83 @@ again:
     perror("hmac error!\n");
   }
 
-  fprintf(stderr, "HMAC = ");
+  fprintf(stderr, "generated HMAC = ");
   printhex(md, mdLen);
 
   strcat(temp, " ");
   strcat(temp, md);
-  fprintf(stderr, "%s\n", temp);
 
   //send message and HMAC
-  pthread_mutex_lock(&mutex);
   write(sock, temp, strlen(temp)+1);
-  pthread_mutex_unlock(&mutex);
 
-  pthread_mutex_lock(&mutex);
-  write(sock, md, strlen(md)+1);
-  pthread_mutex_unlock(&mutex);
   return NULL;
 }
 
 
 void *receiving_thread(void* socket)
 {
-  /*
-  int sock = *((int*)socket);
-  char message[BUF_SIZE];
-  int str_len;
-
-  while(1) {
-
-    //memset(message, '\0', BUF_SIZE);
-    if(str_len = read(sock, message, BUF_SIZE) == -1) {
-      perror("reading error!\n");
-      return (void *)EXIT_FAILURE;
-    }
-    message[str_len+1] = '\0';
-    fprintf(stderr, "%s", message);
-  }
-  return NULL;
-  */
+  struct candidates candid_list[CANDID_MAX];
   int sock=*((int*)socket);
   char message[BUF_SIZE];
-  int str_len;
+  int str_len = 0;
+  char main_subject[BUF_SIZE];
+  int num = 0;
+  int flag2 = 1;
 
   //set the alarm for terminate thread
   //alarm(3);
 
-  while(1)
-  {
-    str_len=read(sock, message, BUF_SIZE-1);
-    if (str_len==-1)
-        return (void*)-1;
-    message[str_len] = 0;
-    fprintf(stderr, "%s", message);
+  while(1) {
+
+    //read survey information from server
+    str_len = read(sock, message, BUF_SIZE);
+    message[str_len] = '\0';
+
+    if (str_len==-1) {
+
+      perror("read error!\n");
+      return (void *)EXIT_FAILURE;
+    }
+
+    fprintf(stderr, "->%s\n", message);
+
+    //split the data and save it
+    char *ptr = strtok(message, "@");
+    strcpy(main_subject, ptr);
+
+
+    while(ptr != NULL) {
+
+      if(flag2) {
+        strcpy(main_subject, ptr);
+        flag2 = 0;
+      } else {
+      strcpy(candid_list[num].name, ptr);
+      }
+      ptr = strtok(NULL, "@");
+      num++;
+    }
+
+  pthread_mutex_lock(&mutex);
+    //print client about survey info
+    fprintf(stderr, "\n\n");
+    fprintf(stderr, "******** SURVEY INFO ********\n\n");
+    fprintf(stderr, "[Survey Topic] %s\n\n", main_subject);
+    fprintf(stderr, "***** SURVEY CANDIDATES *****\n\n");
+
+    for(int i = 0; i < num; i++) {
+
+      fprintf(stderr, "[%d] %s\n", i+1, candid_list[i].name);
+    }
+
+    fprintf(stderr, "\n");
+    fprintf(stderr, "*****************************\n\n");
+
+    flag3 = 1;
+  pthread_mutex_unlock(&mutex);
+
+    if(str_len > 0)
+      break;
   }
 
   return NULL;

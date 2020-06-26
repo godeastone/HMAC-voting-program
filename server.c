@@ -32,6 +32,7 @@ struct candidates
 };
 
 int flag = 1;
+int flag3 = 0;
 char candid_num[BUF_SIZE];
 char main_subject[BUF_SIZE];
 int client_num = 0;
@@ -143,20 +144,18 @@ void *reading_function(void *sock)
   char temp[BUF_SIZE];
 
   //read data from client
-  //while((len = read(client_sock, message, sizeof(message))) != 0) {
   while(1) {
 
+    //receiving message from server
     pthread_mutex_lock(&mutex);
     read(client_sock, message, sizeof(message));
     pthread_mutex_unlock(&mutex);
 
+    //split choice and HMAC from message
     char *ptr = strtok(message, " ");
     strcpy(temp, ptr);
     ptr = strtok(NULL, " ");
     strcpy(recv_hmac, ptr);
-
-    fprintf(stderr, "%s\n", temp);
-    fprintf(stderr, "%s\n", recv_hmac);
 
     choice = atoi(temp);
 
@@ -166,6 +165,7 @@ void *reading_function(void *sock)
       break;
     }
 
+    //Connection closed when Alarm is ring
     if(flag == 0)
       break;
   }
@@ -179,11 +179,15 @@ void *reading_function(void *sock)
     perror("hmac error!\n");
   }
 
-  fprintf(stderr, "Received HMAC = ");
+  pthread_mutex_lock(&mutex);
+  //print received hmac from client
+  fprintf(stderr, "     > Received  HMAC = ");
   printhex(recv_hmac, mdLen);
 
-  fprintf(stderr, "HMAC = ");
+  //print generated hmac by server
+  fprintf(stderr, "     > Generated HMAC = ");
   printhex(md, mdLen);
+  pthread_mutex_unlock(&mutex);
 
 
   // remove this client from client_sockets array
@@ -199,9 +203,9 @@ void *reading_function(void *sock)
   }
 
   client_num--;
-  pthread_mutex_unlock(&mutex);
 
   fprintf(stderr, "An ANONYMOUS(?) voter finishes the survey\n");
+  pthread_mutex_unlock(&mutex);
 
   //close the client socket
   //thread terminate
@@ -213,39 +217,43 @@ void *reading_function(void *sock)
 
 void *writing_function(void *sock)
 {
+  char tempo[BUF_SIZE];
+  char main_subject_t[BUF_SIZE];
   int client_sock = *((int *)sock);
-  char temp[BUF_SIZE];
+  int index;
+  char temp2[BUF_SIZE];
 
+  pthread_mutex_lock(&mutex);
+  if(flag3 == 0) {
 
-  //show clients survey information
-  //memset(temp, 0, BUF_SIZE);
-  strcpy(temp, "******** SURVEY INFO ********\n");
-  write(client_sock, temp, strlen(temp)+1);
-  //memset(temp, 0, BUF_SIZE);
-  strcpy(temp, "[Survey Topic] \n");
-  write(client_sock, temp, strlen(temp)+1);
-  write(client_sock, main_subject, strlen(main_subject)+1);
-  //memset(temp, 0, BUF_SIZE);
-  strcpy(temp, "\n***** SURVEY CANDIDATES *****\n\n");
-  write(client_sock, temp, strlen(temp)+1);
+  strcpy(main_subject_t, main_subject);
+
+  main_subject_t[strlen(main_subject_t)-1] = '\0';
+  strcpy(tempo, main_subject_t);
+  strcat(tempo, "@");
 
   for(int i = 0; i < candid_num_int; i++) {
 
-    //write(client_sock, "[\n", 1);
-    //memset(temp, '\0', BUF_SIZE);
-    //sprintf(temp, "%d", i);
-    ///write(client_sock, temp, sizeof(temp)+1);
-    //write(client_sock, "] \n", 1);
-    //memset(temp, 0, BUF_SIZE);
-    strcpy(temp, candid_list[i].name);
-    write(client_sock, temp, sizeof(temp)+1);
-    write(client_sock, "\n", 1);
+    index = strlen(candid_list[i].name)-1;
+    strcpy(temp2, candid_list[i].name);
+    temp2[index] = '\0';
+
+    strcat(tempo, temp2);
+    strcat(tempo, "@");
   }
 
-  //memset(temp, '\0', BUF_SIZE);
-  strcpy(temp, "\n****************************\n\n");
-  write(client_sock, temp, sizeof(temp));
-  //memset(temp, '\0', BUF_SIZE);
+  flag3 = 1;
+  }
+
+
+  fprintf(stderr, "->%s\n", tempo);
+
+
+  //show clients survey information
+  write(client_sock, tempo, strlen(tempo)+1);
+
+  //unlock mutex
+  pthread_mutex_unlock(&mutex);
 
   return NULL;
 }
