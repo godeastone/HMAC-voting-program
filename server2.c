@@ -7,17 +7,23 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
 
 #define BUF_SIZE 100
 #define MAX_CLIENT 100
 #define MAX_IP 30
 #define CANDID_MAX 30
 
-
 void *reading_function(void *sock);
 void *writing_function(void *sock);
 void survey_setting();
 void signal_handler(int sig_num);
+void printhex(unsigned char *b, int bLen);
+int create_HMAC(const char *mdname, unsigned char *md, int *mdLen,
+		const unsigned char *key, const int keyLen,
+		const unsigned char *m, const int mLen);
+
 
 struct candidates
 {
@@ -28,11 +34,19 @@ struct candidates
 int flag = 1;
 char candid_num[BUF_SIZE];
 char main_subject[BUF_SIZE];
-int client_num=0;
+int client_num = 0;
 int client_sockets[MAX_CLIENT];
 int candid_num_int, duration_int;
 int server_sock, client_sock;
 char candid_name[BUF_SIZE], duration[BUF_SIZE];
+
+//HMAC variables
+unsigned char md[EVP_MAX_MD_SIZE];
+int mdLen;
+char *digest_name = "sha256";
+char *key = "123412341234";
+char message_hmac[BUF_SIZE];
+
 struct candidates candid_list[CANDID_MAX];
 struct sockaddr_in server_adr, client_adr;
 
@@ -42,7 +56,7 @@ pthread_mutex_t mutex;
 
 int main(int argc, char *argv[])
 {
-  int address_size;
+  int address_size, mdLen;
   pthread_t thread_id, thread_id2;
   struct sigaction sig;
 
@@ -114,6 +128,8 @@ int main(int argc, char *argv[])
     if(flag == 0)
       break;
   }
+
+  return 0;
 }
 
 
@@ -131,12 +147,25 @@ void *reading_function(void *sock)
     if(choice != 0) {
       fprintf(stderr, "  One voter picks : %d\n", choice);
       candid_list[choice-1].votes++;
-      memset(message, '\0', BUF_SIZE);
+      break;
     }
 
     if(flag == 0)
       break;
   }
+
+  //save some values for HMAC
+  strcpy(message_hmac, message);
+
+  //calculate HMAC
+  if(!create_HMAC(digest_name, md, &mdLen,
+        key, strlen(key), message_hmac, strlen(message_hmac))) {
+    perror("hmac error!\n");
+  }
+
+  fprintf(stderr, "HMAC = ");
+  printhex(md, mdLen);
+
 
   // remove this client from client_sockets array
   pthread_mutex_lock(&mutex);
@@ -153,8 +182,7 @@ void *reading_function(void *sock)
   client_num--;
   pthread_mutex_unlock(&mutex);
 
-  if(flag == 1)
-    fprintf(stderr, "An ANONYMOUS(?) voter finishes the survey\n");
+  fprintf(stderr, "An ANONYMOUS(?) voter finishes the survey\n");
 
   //close the client socket
   //thread terminate
@@ -171,14 +199,14 @@ void *writing_function(void *sock)
 
 
   //show clients survey information
-  memset(temp, 0, BUF_SIZE);
+  //memset(temp, 0, BUF_SIZE);
   strcpy(temp, "******** SURVEY INFO ********\n");
   write(client_sock, temp, strlen(temp)+1);
-  memset(temp, 0, BUF_SIZE);
+  //memset(temp, 0, BUF_SIZE);
   strcpy(temp, "[Survey Topic] \n");
   write(client_sock, temp, strlen(temp)+1);
   write(client_sock, main_subject, strlen(main_subject)+1);
-  memset(temp, 0, BUF_SIZE);
+  //memset(temp, 0, BUF_SIZE);
   strcpy(temp, "\n***** SURVEY CANDIDATES *****\n\n");
   write(client_sock, temp, strlen(temp)+1);
 
@@ -189,7 +217,7 @@ void *writing_function(void *sock)
     //sprintf(temp, "%d", i);
     ///write(client_sock, temp, sizeof(temp)+1);
     //write(client_sock, "] \n", 1);
-    memset(temp, 0, BUF_SIZE);
+    //memset(temp, 0, BUF_SIZE);
     strcpy(temp, candid_list[i].name);
     write(client_sock, temp, sizeof(temp)+1);
     write(client_sock, "\n", 1);
@@ -198,7 +226,7 @@ void *writing_function(void *sock)
   //memset(temp, '\0', BUF_SIZE);
   strcpy(temp, "\n****************************\n\n");
   write(client_sock, temp, sizeof(temp));
-  memset(temp, '\0', BUF_SIZE);
+  //memset(temp, '\0', BUF_SIZE);
 
   return NULL;
 }
@@ -280,15 +308,56 @@ again:
   return;
 }
 
+
+void printhex(unsigned char *b, int bLen)
+{
+	fprintf(stderr, "%02X",b[0]);
+
+	for(int i=1; i<bLen; i++) {
+		fprintf(stderr, ":%02X", b[i]);
+  }
+
+	fprintf(stderr, "\n");
+}
+
+
+int create_HMAC(const char *mdname, unsigned char *md, int *mdLen,
+    const unsigned char *key, const int keyLen,
+    const unsigned char *m, const int mLen)
+{
+  HMAC_CTX *hctx;
+  hctx = HMAC_CTX_new();
+  if(hctx == NULL) {
+    HMAC_CTX_free(hctx);
+  }
+  const EVP_MD *evpmd;
+
+  OpenSSL_add_all_digests();
+  if(!(evpmd = EVP_get_digestbyname(mdname))) {
+    fprintf(stderr, "EVP_get_digestbyname error!\n");
+    exit(0);
+  }
+
+  HMAC_Init_ex(hctx, key, keyLen, evpmd, NULL);
+  HMAC_Update(hctx, m, mLen);
+  HMAC_Final(hctx, md, mdLen);
+
+  HMAC_CTX_free(hctx);
+
+  return 1;
+}
+
+
 void signal_handler(int sign_num)
 {
   fprintf(stderr, "\n\n### Survey Time OUT ###\n");
-  fprintf(stderr, "******** RESULT *******\n");
+  fprintf(stderr, "************ RESULT ***********\n\n");
 
   for(int i = 0; i < candid_num_int; i++) {
-    fprintf(stderr, "*** [%d] %s   -> %d votes\n",
+    fprintf(stderr, "*** [%d] %s   -> %d votes\n\n",
         i+1, candid_list[i].name, candid_list[i].votes);
   }
+  fprintf(stderr, "*******************************\n");
 
   flag = 0;
 
