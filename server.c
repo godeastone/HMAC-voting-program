@@ -149,14 +149,16 @@ void *reading_function(void *sock)
     pthread_mutex_lock(&mutex);
     read(client_sock, message, sizeof(message));
     pthread_mutex_unlock(&mutex);
-    pthread_mutex_lock(&mutex);
-    read(client_sock, recv_hmac, sizeof(recv_hmac));
-    pthread_mutex_unlock(&mutex);
 
-    fprintf(stderr, "%s\n", message);
+    char *ptr = strtok(message, " ");
+    strcpy(temp, ptr);
+    ptr = strtok(NULL, " ");
+    strcpy(recv_hmac, ptr);
+
+    fprintf(stderr, "%s\n", temp);
     fprintf(stderr, "%s\n", recv_hmac);
 
-    choice = atoi(message);
+    choice = atoi(temp);
 
     if(choice != 0) {
       fprintf(stderr, "  One voter picks : %d\n", choice);
@@ -169,7 +171,7 @@ void *reading_function(void *sock)
   }
 
   //save some values for HMAC
-  strcpy(message_hmac, message);
+  strcpy(message_hmac, temp);
 
   //calculate HMAC
   if(!create_HMAC(digest_name, md, &mdLen,

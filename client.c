@@ -95,18 +95,18 @@ int main(int argc, char *argv[])
 
 void *sending_thread(void* socket)
 {
-  sleep(1);
   int sock = *((int *)socket);
   char message[BUF_SIZE];
   char temp[BUF_SIZE];
 
+again:
   //fgets(temp, BUF_SIZE, stdin);
   scanf("%s", temp);
-  fprintf(stderr, "%s\n", temp);
 
-  // send message
-  //memset(message, '\0', BUF_SIZE);
-
+  if(atoi(temp) == 0) {
+    fprintf(stderr, "Please enter right number\n");
+    goto again;
+  }
   //save some values for HMAC
   strcpy(message_hmac, temp);
 
@@ -118,6 +118,10 @@ void *sending_thread(void* socket)
 
   fprintf(stderr, "HMAC = ");
   printhex(md, mdLen);
+
+  strcat(temp, " ");
+  strcat(temp, md);
+  fprintf(stderr, "%s\n", temp);
 
   //send message and HMAC
   pthread_mutex_lock(&mutex);
