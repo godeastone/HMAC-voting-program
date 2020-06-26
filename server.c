@@ -1,152 +1,383 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <arpa/inet.h>
-#include <sys/types.h>
 #include <sys/socket.h>
+#include <unistd.h>
+#include <string.h>
+#include <pthread.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
-#include <sys/time.h>
+#include <signal.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
 
-#define PORT 5678
-#define MAX_CLIENTS 10
-#define BUF_SIZE 1025
+#define BUF_SIZE 300
+#define MAX_CLIENT 100
+#define MAX_IP 30
+#define CANDID_MAX 30
+
+void *reading_function(void *sock);
+void *writing_function(void *sock);
+void survey_setting();
+void signal_handler(int sig_num);
+void printhex(unsigned char *b, int bLen);
+int create_HMAC(const char *mdname, unsigned char *md, int *mdLen,
+		const unsigned char *key, const int keyLen,
+		const unsigned char *m, const int mLen);
+
+
+struct candidates
+{
+  char name[BUF_SIZE];
+  int votes;
+};
+
+int flag = 1;
+char candid_num[BUF_SIZE];
+char main_subject[BUF_SIZE];
+int client_num = 0;
+int client_sockets[MAX_CLIENT];
+int candid_num_int, duration_int;
+int server_sock, client_sock;
+char candid_name[BUF_SIZE], duration[BUF_SIZE];
+
+//HMAC variables
+unsigned char md[EVP_MAX_MD_SIZE];
+int mdLen;
+char *digest_name = "sha1";
+char *key = "123412341234";
+char message_hmac[BUF_SIZE];
+
+struct candidates candid_list[CANDID_MAX];
+struct sockaddr_in server_adr, client_adr;
+
+pthread_mutex_t mutex;
+
+
 
 int main(int argc, char *argv[])
 {
-  int opt = 1;
-  int master_socket, addrlen, new_socket, client_socket[MAX_CLIENTS];
-  int activity, valread, sd, max_sd;
-  struct sockaddr_in address;
+  int address_size, mdLen;
+  pthread_t thread_id, thread_id2;
+  struct sigaction sig;
 
-  char buffer[BUF_SIZE];
-
-  //set the socket
-  fd_set readfds;
-
-  char *message = "I'm server and obey to me\n";
-
-  //initialize all client socket
-  for(int i = 0; i < MAX_CLIENTS; i++) {
-    client_socket[i] = 0;
+  //print USAGE when arguments are wrong
+  if (argc != 2) {
+    printf(" USAGE : %s <PORT>\n", argv[0]);
+    return EXIT_FAILURE;
   }
 
-  //create master socket
-  if((master_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-    perror("socket error!\n");
-    exit(EXIT_FAILURE);
-  }
+  //assign argv[1] in variable PORT
+  int PORT = atoi(argv[1]);
 
-  //set master socket to allow mutiple clients
-  if(setsockopt(master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) < 0) {
-    perror("setsockopt error!\n");
-    exit(EXIT_FAILURE);
-  }
+  //set signal handler
+  sig.sa_handler = signal_handler;
+  sigemptyset(&sig.sa_mask);
+  sig.sa_flags = 0;
+  sigaction(SIGALRM, &sig, NULL);
 
-  //set options of socket
-  address.sin_family = AF_INET;
-  address.sin_addr.s_addr = INADDR_ANY;
-  address.sin_port = htons(PORT);
+  //setting the survey
+  survey_setting(PORT);
 
-  //bind the sockt
-  if(bind(master_socket, (struct sockaddr *)&address, sizeof(address)) < 0) {
+  //Initialize pthread
+  pthread_mutex_init(&mutex, NULL);
+
+  //create socket
+  server_sock=socket(PF_INET, SOCK_STREAM, 0);
+
+  //Set the options for socket
+  memset(&server_adr, 0, sizeof(server_adr));
+  server_adr.sin_family=AF_INET;
+  server_adr.sin_addr.s_addr=htonl(INADDR_ANY);
+  server_adr.sin_port=htons(PORT);
+
+  //binding the socket
+  if (bind(server_sock, (struct sockaddr*)&server_adr, sizeof(server_adr)) == -1) {
     perror("bind error!\n");
-    exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
 
-  fprintf(stderr, "connecting...\n");
-
-  if(listen(master_socket, 3) < 0) {
+  //listening the connection
+  if (listen(server_sock, 5) == -1) {
     perror("listen error!\n");
-    exit(EXIT_FAILURE);
+    return EXIT_FAILURE;
   }
-
-  //accept the conntection
-  addrlen = sizeof(address);
-  fprintf(stderr, "Waiting for connections...\n");
 
   while(1) {
-    //clear socket set
-    FD_ZERO(&readfds);
+    address_size = sizeof(client_adr);
+    //waiting for clients
+    client_sock = accept(server_sock, (struct sockaddr*)&client_adr, &address_size);
 
-    //add master socket
-    FD_SET(master_socket, &readfds);
-    max_sd = master_socket;
 
-    //add child sockets to set
-    for(int i = 0; i < MAX_CLIENTS; i++) {
-      //socket descriptor
-      sd = client_socket[i];
+    //lock
+    pthread_mutex_lock(&mutex);
+      //save client's socket in array 'client_socks'
+    client_sockets[client_num++] = client_sock;
+    //unlock
+    pthread_mutex_unlock(&mutex);
 
-      //if socket descriptor is valid add to read list
-      if(sd > 0) {
-        FD_SET(sd, &readfds);
-      }
+    //create thread
+    pthread_create(&thread_id, NULL, reading_function, (void *)&client_sock);
+    pthread_detach(thread_id);
+    //pthread_create(&thread_id2, NULL, writing_function, (void *)&client_sock);
+    //pthread_detach(thread_id2);
 
-      //highest file descriptor number
-      if(sd > max_sd) {
-        max_sd = sd;
-      }
-    }
+    if(flag == 1)
+      fprintf(stderr, "An ANONYMOUS(?) voter enters the survey\n");
 
-    //wait for activity of sockets
-    activity = select(max_sd+1, &readfds, NULL, NULL, NULL);
-
-    if((activity < 0) && (errno != EINTR)) {
-      fprintf(stderr, "select error!\n");
-    }
-
-    //When clients active
-    if(FD_ISSET(master_socket, &readfds)) {
-      if((new_socket = accept(master_socket, (struct sockaddr *)&address,
-              (socklen_t*)&addrlen)) < 0) {
-
-        perror("accept error!\n");
-        exit(EXIT_FAILURE);
-      }
-
-      fprintf(stderr, "New connection, socket fd : %d, ip : %s, port : %d\n",
-          new_socket, inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-
-      //send new connection greeting message
-      if(send(new_socket, message, strlen(message), 0) != strlen(message)) {
-        perror("send error!\n");
-      }
-
-      //add new socket to array of sockets
-      for(int i = 0; i < MAX_CLIENTS; i++) {
-        if(client_socket[i] == 0) {
-          client_socket[i] = new_socket;
-          fprintf(stderr, "Adding to list of sockets as %d\n", i);
-
-          break;
-        }
-      }
-    }
-
-    //some IO operation on other socket
-    for(int i = 0; i < MAX_CLIENTS; i++) {
-      sd = client_socket[i];
-
-      if(FD_ISSET(sd, &readfds)) {
-        //check whether closed
-        if((valread = read(sd, buffer, 1024)) == 0) {
-          //show closed clients
-          getpeername(sd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
-          fprintf(stderr, "DISCONNECTED, ip : %s, port : %d\n",
-              inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-          //close the socket
-          close(sd);
-          client_socket[i] = 0;
-        } else {
-          //echo back the message that came in
-          buffer[valread] = '\0';
-          send(sd, buffer, strlen(buffer), 0);
-        }
-      }
-    }
+    //close connection when timeout
+    if(flag == 0)
+      break;
   }
 
   return 0;
+}
+
+
+void *reading_function(void *sock)
+{
+  int client_sock = *((int*)sock);
+  int len = 0;
+  int choice;
+  char message[BUF_SIZE];
+  char recv_hmac[BUF_SIZE];
+  char temp[BUF_SIZE];
+
+  //read data from client
+  //while((len = read(client_sock, message, sizeof(message))) != 0) {
+  while(1) {
+
+    pthread_mutex_lock(&mutex);
+    read(client_sock, message, sizeof(message));
+    pthread_mutex_unlock(&mutex);
+    pthread_mutex_lock(&mutex);
+    read(client_sock, recv_hmac, sizeof(recv_hmac));
+    pthread_mutex_unlock(&mutex);
+
+    fprintf(stderr, "%s\n", message);
+    fprintf(stderr, "%s\n", recv_hmac);
+
+    choice = atoi(message);
+
+    if(choice != 0) {
+      fprintf(stderr, "  One voter picks : %d\n", choice);
+      candid_list[choice-1].votes++;
+      break;
+    }
+
+    if(flag == 0)
+      break;
+  }
+
+  //save some values for HMAC
+  strcpy(message_hmac, message);
+
+  //calculate HMAC
+  if(!create_HMAC(digest_name, md, &mdLen,
+        key, strlen(key), message_hmac, strlen(message_hmac))) {
+    perror("hmac error!\n");
+  }
+
+  fprintf(stderr, "Received HMAC = ");
+  printhex(recv_hmac, mdLen);
+
+  fprintf(stderr, "HMAC = ");
+  printhex(md, mdLen);
+
+
+  // remove this client from client_sockets array
+  pthread_mutex_lock(&mutex);
+  for (int i = 0; i < client_num; i++) {
+    if (client_sock == client_sockets[i]) {
+
+      while(i++ < client_num-1) {
+        client_sockets[i] = client_sockets[i+1];
+      }
+      break;
+    }
+  }
+
+  client_num--;
+  pthread_mutex_unlock(&mutex);
+
+  fprintf(stderr, "An ANONYMOUS(?) voter finishes the survey\n");
+
+  //close the client socket
+  //thread terminate
+  close(client_sock);
+
+  return NULL;
+}
+
+
+void *writing_function(void *sock)
+{
+  int client_sock = *((int *)sock);
+  char temp[BUF_SIZE];
+
+
+  //show clients survey information
+  //memset(temp, 0, BUF_SIZE);
+  strcpy(temp, "******** SURVEY INFO ********\n");
+  write(client_sock, temp, strlen(temp)+1);
+  //memset(temp, 0, BUF_SIZE);
+  strcpy(temp, "[Survey Topic] \n");
+  write(client_sock, temp, strlen(temp)+1);
+  write(client_sock, main_subject, strlen(main_subject)+1);
+  //memset(temp, 0, BUF_SIZE);
+  strcpy(temp, "\n***** SURVEY CANDIDATES *****\n\n");
+  write(client_sock, temp, strlen(temp)+1);
+
+  for(int i = 0; i < candid_num_int; i++) {
+
+    //write(client_sock, "[\n", 1);
+    //memset(temp, '\0', BUF_SIZE);
+    //sprintf(temp, "%d", i);
+    ///write(client_sock, temp, sizeof(temp)+1);
+    //write(client_sock, "] \n", 1);
+    //memset(temp, 0, BUF_SIZE);
+    strcpy(temp, candid_list[i].name);
+    write(client_sock, temp, sizeof(temp)+1);
+    write(client_sock, "\n", 1);
+  }
+
+  //memset(temp, '\0', BUF_SIZE);
+  strcpy(temp, "\n****************************\n\n");
+  write(client_sock, temp, sizeof(temp));
+  //memset(temp, '\0', BUF_SIZE);
+
+  return NULL;
+}
+
+
+void survey_setting()
+{
+  char yn;
+
+again:
+
+  fprintf(stderr, "***********************\n");
+  fprintf(stderr, "*   SURVEY SETTINGS   *\n");
+  fprintf(stderr, "***********************\n");
+
+  fprintf(stderr, "\n");
+  fprintf(stderr, "* Please enter main subject of survey *\n");
+  fprintf(stderr, "-> ");
+
+  //Server user enters the main subject of the survey
+  fgets(main_subject, BUF_SIZE, stdin);
+
+  fprintf(stderr, "\n");
+  fprintf(stderr, "* Please enter the number of candidates *\n");
+  fprintf(stderr, "-> ");
+
+  //Server user enters the number of candidates
+  fgets(candid_num, BUF_SIZE, stdin);
+  candid_num_int = atoi(candid_num);
+
+  //error handling
+  if(candid_num_int == 0) {
+    fprintf(stderr, "\n");
+    fprintf(stderr, "## wrong number!\n ##try again!\n");
+    goto again;
+  }
+
+  //set candidates' information in candid_list
+  for(int i = 0; i < candid_num_int; i++) {
+
+    fprintf(stderr, "\n");
+    fprintf(stderr, "   * Enter %d candidate's name *\n", i+1);
+    fprintf(stderr, "   > ");
+
+    fgets(candid_name, BUF_SIZE, stdin);
+
+    strcpy(candid_list[i].name, candid_name);
+    candid_list[i].votes = 0;
+  }
+
+  //show candidates
+  system("clear");
+  fprintf(stderr, "\n\n");
+  fprintf(stderr, "******** SURVEY INFO ********\n\n");
+  fprintf(stderr, "[Survey Topic] %s\n", main_subject);
+  fprintf(stderr, "***** SURVEY CANDIDATES *****\n\n");
+  for(int i = 0; i < candid_num_int; i++) {
+
+    fprintf(stderr, "[%d] %s", i+1, candid_list[i].name);
+  }
+  fprintf(stderr, "\n");
+  fprintf(stderr, "*****************************\n\n");
+
+  //server user enters the duration minutes
+  fprintf(stderr, "* Please enter duration of the survey (minutes) *\n");
+  fprintf(stderr, "-> ");
+
+  fgets(duration, BUF_SIZE, stdin);
+  duration_int = atoi(duration);
+
+  //set the alarm
+  alarm(duration_int * 60);
+
+  fprintf(stderr, "********************************\n");
+  fprintf(stderr, "*         SURVEY START!        *\n");
+  fprintf(stderr, "* SURVEY ends after %d minutes  *\n", duration_int);
+  fprintf(stderr, "********************************\n");
+
+  return;
+}
+
+
+void printhex(unsigned char *b, int bLen)
+{
+	fprintf(stderr, "%02X",b[0]);
+
+	for(int i=1; i<bLen; i++) {
+		fprintf(stderr, ":%02X", b[i]);
+  }
+
+	fprintf(stderr, "\n");
+}
+
+
+int create_HMAC(const char *mdname, unsigned char *md, int *mdLen,
+    const unsigned char *key, const int keyLen,
+    const unsigned char *m, const int mLen)
+{
+  HMAC_CTX *hctx;
+  hctx = HMAC_CTX_new();
+  if(hctx == NULL) {
+    HMAC_CTX_free(hctx);
+  }
+  const EVP_MD *evpmd;
+
+  OpenSSL_add_all_digests();
+  if(!(evpmd = EVP_get_digestbyname(mdname))) {
+    fprintf(stderr, "EVP_get_digestbyname error!\n");
+    exit(0);
+  }
+
+  HMAC_Init_ex(hctx, key, keyLen, evpmd, NULL);
+  HMAC_Update(hctx, m, mLen);
+  HMAC_Final(hctx, md, mdLen);
+
+  HMAC_CTX_free(hctx);
+
+  return 1;
+}
+
+
+void signal_handler(int sign_num)
+{
+  fprintf(stderr, "\n\n### Survey Time OUT ###\n");
+  fprintf(stderr, "************ RESULT ***********\n\n");
+
+  for(int i = 0; i < candid_num_int; i++) {
+    fprintf(stderr, "*** [%d] %s   -> %d votes\n\n",
+        i+1, candid_list[i].name, candid_list[i].votes);
+  }
+  fprintf(stderr, "*******************************\n");
+
+  flag = 0;
+
+  //end connection
+  close(server_sock);
 }

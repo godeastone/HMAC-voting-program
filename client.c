@@ -1,28 +1,35 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
+#include <sys/socket.h>
 #include <string.h>
 #include <arpa/inet.h>
-#include <sys/socket.h>
 #include <pthread.h>
-#include <time.h>
+#include <stdlib.h>
 #include <signal.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
 
 
-#define BUF_SIZE 100
-#define NORMAL_SIZE 20
+#define BUF_SIZE 300
 
 void *sending_thread(void* arg);
 void *receiving_thread(void* arg);
 void signal_handler(int sig_num);
+void printhex(unsigned char *b, int bLen);
+int create_HMAC(const char *mdname, unsigned char *md, int *mdLen,
+		const unsigned char *key, const int keyLen,
+		const unsigned char *m, const int mLen);
 
-char name[NORMAL_SIZE]="[DEFALT]";     // name
-char msg_form[NORMAL_SIZE];            // msg form
-char serv_time[NORMAL_SIZE];        // server time
-char msg[BUF_SIZE];                    // msg
-char serv_port[NORMAL_SIZE];        // server port number
-char clnt_ip[NORMAL_SIZE];            // client ip address
 int flag = 0;
+pthread_mutex_t mutex;
+
+//HMAC variables
+unsigned char md[EVP_MAX_MD_SIZE];
+int mdLen;
+char *digest_name = "sha1";
+char *key = "123412341234";
+char message_hmac[BUF_SIZE];
+
 
 int main(int argc, char *argv[])
 {
@@ -43,11 +50,17 @@ int main(int argc, char *argv[])
   char IP[30] = {0,};
   strcpy(IP, argv[1]);
 
+  //Initialize pthread
+  pthread_mutex_init(&mutex, NULL);
+
   //set signal handler
   sig.sa_handler = signal_handler;
   sigemptyset(&sig.sa_mask);
   sig.sa_flags = 0;
   sigaction(SIGALRM, &sig, NULL);
+
+  system("clear");
+  fprintf(stderr, "* Start survey! *\n");
 
   //create socket
   sock = socket(PF_INET, SOCK_STREAM, 0);
@@ -85,22 +98,35 @@ void *sending_thread(void* socket)
   sleep(1);
   int sock = *((int *)socket);
   char message[BUF_SIZE];
-  char* who = NULL;
   char temp[BUF_SIZE];
 
-
-  fgets(temp, BUF_SIZE, stdin);
-
-  if (!strcmp(temp, "q\n") || !strcmp(temp, "Q\n")) {
-    close(sock);
-    exit(0);
-  }
+  //fgets(temp, BUF_SIZE, stdin);
+  scanf("%s", temp);
+  fprintf(stderr, "%s\n", temp);
 
   // send message
   //memset(message, '\0', BUF_SIZE);
-  sprintf(message, "%s", temp);
-  write(sock, message, strlen(message)+1);
 
+  //save some values for HMAC
+  strcpy(message_hmac, temp);
+
+  //calculate HMAC
+  if(!create_HMAC(digest_name, md, &mdLen,
+        key, strlen(key), message_hmac, strlen(message_hmac))) {
+    perror("hmac error!\n");
+  }
+
+  fprintf(stderr, "HMAC = ");
+  printhex(md, mdLen);
+
+  //send message and HMAC
+  pthread_mutex_lock(&mutex);
+  write(sock, temp, strlen(temp)+1);
+  pthread_mutex_unlock(&mutex);
+
+  pthread_mutex_lock(&mutex);
+  write(sock, md, strlen(md)+1);
+  pthread_mutex_unlock(&mutex);
   return NULL;
 }
 
@@ -125,7 +151,7 @@ void *receiving_thread(void* socket)
   return NULL;
   */
   int sock=*((int*)socket);
-  char name_msg[NORMAL_SIZE+BUF_SIZE];
+  char message[BUF_SIZE];
   int str_len;
 
   //set the alarm for terminate thread
@@ -133,14 +159,56 @@ void *receiving_thread(void* socket)
 
   while(1)
   {
-    str_len=read(sock, name_msg, NORMAL_SIZE+BUF_SIZE-1);
+    str_len=read(sock, message, BUF_SIZE-1);
     if (str_len==-1)
         return (void*)-1;
-    name_msg[str_len]=0;
+    message[str_len] = 0;
     fprintf(stderr, "%s", message);
   }
 
   return NULL;
+}
+
+
+void printhex(unsigned char *b, int bLen)
+{
+	fprintf(stderr, "%02X",b[0]);
+
+	for(int i=1; i<bLen; i++) {
+		fprintf(stderr, ":%02X", b[i]);
+  }
+
+	fprintf(stderr, "\n");
+}
+
+
+int create_HMAC(const char *mdname, unsigned char *md, int *mdLen,
+    const unsigned char *key, const int keyLen,
+    const unsigned char *m, const int mLen)
+{
+  HMAC_CTX *hctx;
+  hctx = HMAC_CTX_new();
+
+  //confirm HMAC_CTX is right
+  if(hctx == NULL) {
+    HMAC_CTX_free(hctx);
+  }
+  const EVP_MD *evpmd;
+
+  OpenSSL_add_all_digests();
+
+  if(!(evpmd = EVP_get_digestbyname(mdname))) {
+    fprintf(stderr, "EVP_get_digestbyname error!\n");
+    exit(0);
+  }
+
+  HMAC_Init_ex(hctx, key, keyLen, evpmd, NULL);
+  HMAC_Update(hctx, m, mLen);
+  HMAC_Final(hctx, md, mdLen);
+
+  HMAC_CTX_free(hctx);
+
+  return 1;
 }
 
 void signal_handler(int sign_num)
