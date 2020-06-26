@@ -1,4 +1,4 @@
-## ChattingProgram_with_C
+## VottingProgram_with_C
 
 # ENGLISH
 
