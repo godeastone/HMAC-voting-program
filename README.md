@@ -15,7 +15,7 @@
 
 * If you choose wrong number or HMAC was not same, your choice is not reflected in result.
 
-* Use apt-get **install libssl-dev** when you cannot compile
+* Use `apt-get install libssl-dev` when you cannot compile
 
 
 # KOREAN
@@ -29,4 +29,4 @@
 
 * 다음으로 CLIENT 를 서버의 ip주소와 포트번호와 함께 실행시키면, `ex) ./CLIENT 123.456.789.112 5656` 클라이언트가 실행됩니다. 클라이언트는 투표하려는 후보의 번호를 입력하면 자동으로 HMAC의 값이 출력되고, 종료됩니다.
 
-* 만약 컴파일이 되지 않는다면 터미널에 **install libssl-dev**를 입력해 보십시오.
+* 만약 컴파일이 되지 않는다면 터미널에 `apt-get install libssl-dev`를 입력해 보십시오.
