@@ -91,9 +91,9 @@ int main(int argc, char *argv[])
   //and create receving data thread
   pthread_create(&send_thread, NULL, sending_thread, (void*)&sock);
   //pthread_detach(send_thread);
-  //pthread_create(&receive_thread, NULL, receiving_thread, (void*)&sock);
+  pthread_create(&receive_thread, NULL, receiving_thread, (void*)&sock);
   //pthread_detach(receive_thread);
-  //pthread_join(receive_thread, &thread_return);
+  pthread_join(receive_thread, &thread_return);
   pthread_join(send_thread, &thread_return);
   fprintf(stderr, "Complete survey!\n");
 
@@ -108,9 +108,10 @@ void *sending_thread(void* socket)
   char message[BUF_SIZE];
   char temp[BUF_SIZE];
 
-  pthread_mutex_lock(&mutex);
   while(1) {
+    pthread_mutex_lock(&mutex);
     if(flag3 = 1) break;
+    pthread_mutex_unlock(&mutex);
   }
   pthread_mutex_unlock(&mutex);
 
@@ -189,27 +190,28 @@ void *receiving_thread(void* socket)
     }
 
   pthread_mutex_lock(&mutex);
-    //print client about survey info
-    fprintf(stderr, "\n\n");
-    fprintf(stderr, "******** SURVEY INFO ********\n\n");
-    fprintf(stderr, "[Survey Topic] %s\n\n", main_subject);
-    fprintf(stderr, "***** SURVEY CANDIDATES *****\n\n");
 
-    for(int i = 0; i < num; i++) {
+  //print client about survey info
+  fprintf(stderr, "\n\n");
+  fprintf(stderr, "******** SURVEY INFO ********\n\n");
+  fprintf(stderr, "[Survey Topic] %s\n\n", main_subject);
+  fprintf(stderr, "***** SURVEY CANDIDATES *****\n\n");
 
-      fprintf(stderr, "[%d] %s\n", i+1, candid_list[i].name);
-    }
+  for(int i = 0; i < num; i++) {
 
-    fprintf(stderr, "\n");
-    fprintf(stderr, "*****************************\n\n");
+    fprintf(stderr, "[%d] %s\n", i+1, candid_list[i].name);
+  }
 
-    flag3 = 1;
+  fprintf(stderr, "\n");
+  fprintf(stderr, "*****************************\n\n");
+
+  flag3 = 1;
+
   pthread_mutex_unlock(&mutex);
 
     if(str_len > 0)
       break;
   }
-
   return NULL;
 }
 

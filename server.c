@@ -118,8 +118,8 @@ int main(int argc, char *argv[])
 
     //create thread
     pthread_create(&thread_id, NULL, reading_function, (void *)&client_sock);
-    pthread_detach(thread_id);
-    //pthread_create(&thread_id2, NULL, writing_function, (void *)&client_sock);
+    //pthread_detach(thread_id);
+    pthread_create(&thread_id2, NULL, writing_function, (void *)&client_sock);
     //pthread_detach(thread_id2);
 
     if(flag == 1)
@@ -216,11 +216,12 @@ void *reading_function(void *sock)
   client_num--;
 
   fprintf(stderr, "An (?)ANONYMOUS(?) voter finishes the survey\n");
-  pthread_mutex_unlock(&mutex);
 
   //close the client socket
   //thread terminate
   close(client_sock);
+
+  pthread_mutex_unlock(&mutex);
 
   return NULL;
 }
@@ -234,8 +235,13 @@ void *writing_function(void *sock)
   int index;
   char temp2[BUF_SIZE];
 
+
   pthread_mutex_lock(&mutex);
-  if(flag3 == 0) {
+  for(int i = 0; i < BUF_SIZE; i++) {
+    tempo[i] = '\0';
+  }
+
+
 
   strcpy(main_subject_t, main_subject);
 
@@ -253,11 +259,9 @@ void *writing_function(void *sock)
     strcat(tempo, "@");
   }
 
-  flag3 = 1;
-  }
-
-
-  fprintf(stderr, "->%s\n", tempo);
+  /*FOR DEBUGGING
+   * fprintf(stderr, "=>%s\n", tempo);
+   */
 
 
   //show clients survey information
@@ -265,7 +269,7 @@ void *writing_function(void *sock)
 
   //unlock mutex
   pthread_mutex_unlock(&mutex);
-
+  
   return NULL;
 }
 
