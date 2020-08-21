@@ -60,6 +60,7 @@ int main(int argc, char *argv[])
   int address_size, mdLen;
   pthread_t thread_id, thread_id2;
   struct sigaction sig;
+  void *return_thread;
 
   //print USAGE when arguments are wrong
   if (argc != 2) {
@@ -117,10 +118,10 @@ int main(int argc, char *argv[])
     pthread_mutex_unlock(&mutex);
 
     //create thread
-    pthread_create(&thread_id, NULL, reading_function, (void *)&client_sock);
-    //pthread_detach(thread_id);
     pthread_create(&thread_id2, NULL, writing_function, (void *)&client_sock);
-    //pthread_detach(thread_id2);
+    pthread_join(thread_id2, &return_thread);
+    pthread_create(&thread_id, NULL, reading_function, (void *)&client_sock);
+    //pthread_join(thread_id, &return_thread);
 
     if(flag == 1)
       fprintf(stderr, "An (?)ANONYMOUS(?) voter enters the survey\n");
@@ -164,10 +165,6 @@ void *reading_function(void *sock)
       candid_list[choice-1].votes++;
       break;
     }
-
-    //Connection closed when Alarm is ring
-    if(flag == 0)
-      break;
   }
 
   //save some values for HMAC
@@ -269,7 +266,7 @@ void *writing_function(void *sock)
 
   //unlock mutex
   pthread_mutex_unlock(&mutex);
-  
+
   return NULL;
 }
 

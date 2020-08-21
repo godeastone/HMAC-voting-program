@@ -89,11 +89,9 @@ int main(int argc, char *argv[])
 
   //create sending data thread
   //and create receving data thread
-  pthread_create(&send_thread, NULL, sending_thread, (void*)&sock);
-  //pthread_detach(send_thread);
   pthread_create(&receive_thread, NULL, receiving_thread, (void*)&sock);
-  //pthread_detach(receive_thread);
   pthread_join(receive_thread, &thread_return);
+  pthread_create(&send_thread, NULL, sending_thread, (void*)&sock);
   pthread_join(send_thread, &thread_return);
   fprintf(stderr, "Complete survey!\n");
 
@@ -158,7 +156,7 @@ void *receiving_thread(void* socket)
   //set the alarm for terminate thread
   //alarm(3);
 
-  while(1) {
+  //while(1) {
 
     //read survey information from server
     str_len = read(sock, message, BUF_SIZE);
@@ -209,9 +207,7 @@ void *receiving_thread(void* socket)
 
   pthread_mutex_unlock(&mutex);
 
-    if(str_len > 0)
-      break;
-  }
+  //}
   return NULL;
 }
 
