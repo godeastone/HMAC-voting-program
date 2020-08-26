@@ -115,6 +115,7 @@ void *sending_thread(void* socket)
 
 again:
   //fgets(temp, BUF_SIZE, stdin);
+  fprintf(stderr, "Please Vote one of the candidates\n => ");
   scanf("%s", temp);
 
   if(atoi(temp) == 0 || atoi(temp) > CANDID_MAX) {
@@ -168,7 +169,7 @@ void *receiving_thread(void* socket)
       return (void *)EXIT_FAILURE;
     }
 
-    fprintf(stderr, "->%s\n", message);
+    //fprintf(stderr, "->%s\n", message);
 
     //split the data and save it
     char *ptr = strtok(message, "@");
@@ -181,10 +182,10 @@ void *receiving_thread(void* socket)
         strcpy(main_subject, ptr);
         flag2 = 0;
       } else {
-      strcpy(candid_list[num].name, ptr);
+        strcpy(candid_list[num].name, ptr);
+        num++;
       }
       ptr = strtok(NULL, "@");
-      num++;
     }
 
   pthread_mutex_lock(&mutex);
