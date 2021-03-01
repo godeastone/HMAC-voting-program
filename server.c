@@ -45,7 +45,7 @@ char candid_name[BUF_SIZE], duration[BUF_SIZE];
 unsigned char md[EVP_MAX_MD_SIZE];
 int mdLen;
 char *digest_name = "sha1";
-char *key = "123412341234";
+char key[12] = "";
 char message_hmac[BUF_SIZE];
 
 struct candidates candid_list[CANDID_MAX];
@@ -157,6 +157,8 @@ void *reading_function(void *sock)
     strcpy(temp, ptr);
     ptr = strtok(NULL, " ");
     strcpy(recv_hmac, ptr);
+    ptr = strtok(NULL, " ");
+    strcpy(key, ptr);
 
     choice = atoi(temp);
 

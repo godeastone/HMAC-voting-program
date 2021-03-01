@@ -8,6 +8,7 @@
 #include <signal.h>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
+#include <time.h>
 
 
 #define BUF_SIZE 300
@@ -29,12 +30,13 @@ struct candidates
 
 int flag3 = 0;
 pthread_mutex_t mutex;
+char main_subject[BUF_SIZE];
 
 //HMAC variables
 unsigned char md[EVP_MAX_MD_SIZE];
 int mdLen;
 char *digest_name = "sha1";
-char *key = "123412341234";
+char key[12] = "";
 char message_hmac[BUF_SIZE];
 int flag = 0;
 
@@ -125,6 +127,40 @@ again:
   //save some values for HMAC
   strcpy(message_hmac, temp);
 
+  //Make random key
+  srand(time(NULL));
+  int rand1, rand2, rand3, rand4;
+
+  if(strlen(main_subject) > 9) {
+  	rand1 = rand() % 10;
+  	rand2 = rand() % 10;
+  	rand3 = rand() % 10;
+  	rand4 = rand() % 10;
+  } else {
+	rand1 = rand() % strlen(main_subject);
+  	rand2 = rand() % strlen(main_subject);
+  	rand3 = rand() % strlen(main_subject);
+  	rand4 = rand() % strlen(main_subject);
+  }
+
+  char temp2[2];
+  sprintf(temp2, "%d", rand1);
+  key[0] = temp2[0];
+  sprintf(temp2, "%d", rand2);
+  key[1] = temp2[0];
+  sprintf(temp2, "%d", rand3);
+  key[2] = temp2[0];
+  sprintf(temp2, "%d", rand4);
+  key[3] = temp2[0];
+  key[4] = main_subject[rand1];
+  key[5] = main_subject[rand2];
+  key[6] = main_subject[rand3];
+  key[7] = main_subject[rand4];
+  key[8] = main_subject[rand1];
+  key[9] = main_subject[rand2];
+  key[10] = main_subject[rand3];
+  key[11] = main_subject[rand4];
+
   //calculate HMAC
   if(!create_HMAC(digest_name, md, &mdLen,
         key, strlen(key), message_hmac, strlen(message_hmac))) {
@@ -136,6 +172,8 @@ again:
 
   strcat(temp, " ");
   strcat(temp, md);
+  strcat(temp, " ");
+  strcat(temp, key);
 
   //send message and HMAC
   write(sock, temp, strlen(temp)+1);
@@ -150,7 +188,6 @@ void *receiving_thread(void* socket)
   int sock=*((int*)socket);
   char message[BUF_SIZE];
   int str_len = 0;
-  char main_subject[BUF_SIZE];
   int num = 0;
   int flag2 = 1;
 
