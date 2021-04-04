@@ -3,7 +3,7 @@
 # ENGLISH
 
 
-* If you compile this codes (server.c, client.c), two program will created **SERVER** and **CLIENT**
+* If you compile this codes (server.c, client.c), two program will created; **SERVER** and **CLIENT**
 
 * You can easily compile codes by just enter `make` on terminal, because of the Makefile.
 
