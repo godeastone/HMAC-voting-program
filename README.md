@@ -1,7 +1,4 @@
-## VottingProgram_with_C
-
-# ENGLISH
-
+# VottingProgram_with_C
 
 * If you compile this codes (server.c, client.c), two program will created; **SERVER** and **CLIENT**
 
